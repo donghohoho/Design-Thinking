@@ -353,7 +353,7 @@ ${history}
     if (!newUsersData[username]) {
       newUsersData[username] = {
         username: username,
-        history: [{ role: 'assistant', content: `안녕하세요, ${username}님. 오늘 어떤 이야기를 나누고 싶으신가요?` }],
+        history: [{ role: 'assistant', content: `안녕하세요, ${username}님. BMI(마음 인바디)를 통해 오늘 당신의 마음 균형을 체크해볼까요?` }],
         characteristics: ""
       };
     }
@@ -449,8 +449,10 @@ ${history}`;
   if (!currentUser) {
     return (
       <div className="container login-container">
-        <h1>FaceMood Counselor</h1>
-        <p>로그인하여 이전 상담 내역을 확인하세요.</p>
+        <div className="login-header">
+          <h1>BMI: Balance of Mind Index</h1>
+          <p>"Weight your Mind, Balance your Life."</p>
+        </div>
         <div className="login-box">
           <input
             type="text"
@@ -459,7 +461,7 @@ ${history}`;
             onChange={(e) => setUsernameInput(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
           />
-          <button onClick={handleLogin}>시작하기</button>
+          <button onClick={handleLogin}>마음 인바디 측정 시작</button>
         </div>
       </div>
     );
@@ -474,7 +476,7 @@ ${history}`;
         </div>
       )}
       <header>
-        <h1>FaceMood Counselor</h1>
+        <h1>BMI</h1>
         <div className="user-info">
           <span>{currentUser}님, 환영합니다.</span>
           <button onClick={() => summarizeCharacteristics()} disabled={isSummarizing} className="summary-button">대화 내용 요약/저장</button>
