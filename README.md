@@ -38,10 +38,12 @@ npm install
 ```
 
 ### 2. 환경 변수 설정
-`.env` 파일을 생성하고 Gemini API 키를 입력합니다.
+.env 파일을 생성하고 필요한 API 키를 입력합니다.
 ```bash
 # .env 파일 생성 후 아래 내용 입력
 VITE_GEMINI_API_KEY=YOUR_API_KEY_HERE
+# ElevenLabs API 키 (필요 시)
+ELEVENLABS_API_KEY=YOUR_ELEVENLABS_API_KEY_HERE
 ```
 
 ### 3. 개발 서버 실행
