@@ -20,6 +20,29 @@ interface ChatMessage {
   voiceInfo?: string;
 }
 
+interface AnalysisData {
+  summary: string;
+  emotions: {
+    joy: number;
+    trust: number;
+    fear: number;
+    surprise: number;
+    sadness: number;
+    disgust: number;
+    anger: number;
+    anticipation: number;
+  };
+  date: string;
+}
+
+interface UserData {
+  username: string;
+  history: ChatMessage[];
+  characteristics: string;
+  analysisHistory: AnalysisData[];
+  isReturningUser: boolean;
+}
+
 const STORAGE_KEY = 'faceMoodCounselorData';
 
 function App() {
@@ -41,8 +64,9 @@ function App() {
   const voiceCalmnessRef = useRef(100);
 
   // User and Data State
+  const [view, setView] = useState<'login' | 'home' | 'counseling' | 'analysis'>('login');
   const [currentUser, setCurrentUser] = useState<string | null>(null);
-  const [usersData, setUsersData] = useState<any>({});
+  const [usersData, setUsersData] = useState<Record<string, UserData>>({});
   const [usernameInput, setUsernameInput] = useState('');
 
   const [faceLandmarker, setFaceLandmarker] = useState<FaceLandmarker | null>(null);
@@ -78,10 +102,12 @@ function App() {
             if (parsedData.currentUser && parsedData.users[parsedData.currentUser]) {
               setCurrentUser(parsedData.currentUser);
               setMessages(parsedData.users[parsedData.currentUser].history || []);
+              setView('home'); // 이미 로그인된 세션이 있으면 홈 화면으로
             } else {
                setMessages([
                 { role: 'assistant', content: '안녕하세요. 당신의 표정과 목소리를 읽고 진심으로 듣는 AI 상담사입니다. 오늘 무슨 고민이 있으신가요?' }
               ]);
+               setView('login');
             }
           }
         } catch (e) {
@@ -295,7 +321,7 @@ function App() {
 
     try {
       const genAI = new GoogleGenerativeAI(import.meta.env.VITE_GEMINI_API_KEY);
-      const model = genAI.getGenerativeModel({ model: "gemini-3-flash-preview" });
+      const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
       const systemPrompt = `당신은 따뜻하고 공감 능력이 뛰어난 전문 심리 상담가입니다. 
 당신의 목표는 사용자가 자신의 감정과 고민을 편안하게 털어놓도록 돕고, 충분한 지지와 공감을 보낸 뒤, 대화가 충분히 무르익었을 때 실질적인 도움을 주는 것입니다.
@@ -317,12 +343,21 @@ function App() {
 - 사용자의 행동이나 감정을 가르치려 들거나 비판하지 마세요.
 - 사용자가 묻기 전까지는 AI라는 사실을 굳이 먼저 강조하며 선을 긋지 마세요.`;
 
+      const latestAnalysis = (currentUser && usersData[currentUser]?.analysisHistory?.slice(-1)[0]);
+      const analysisContext = latestAnalysis 
+        ? `[최신 심리 분석 데이터 (${latestAnalysis.date})]
+- 이전 상담 요약: ${latestAnalysis.summary}
+- 이전 상담 시 주요 감정(0~100): 기쁨(${latestAnalysis.emotions.joy}), 슬픔(${latestAnalysis.emotions.sadness}), 분노(${latestAnalysis.emotions.anger}), 공포(${latestAnalysis.emotions.fear}), 신뢰(${latestAnalysis.emotions.trust}), 혐오(${latestAnalysis.emotions.disgust}), 기대(${latestAnalysis.emotions.anticipation}), 놀람(${latestAnalysis.emotions.surprise})
+- 지침: 위 정보를 바탕으로 사용자의 지난 기분을 먼저 가볍게 묻거나(예: '지난번에는 슬픈 일이 있으셨는데 오늘은 좀 어떠세요?'), 일관성 있는 상담을 진행하세요.`
+        : '이전 분석 데이터가 없습니다. 새로운 대화를 시작하세요.';
+
       const characteristics = (currentUser && usersData[currentUser]?.characteristics) || '아직 파악되지 않음';
 
       const fullPrompt = `${systemPrompt}
       
 [사용자 사전 정보]
 - 이전 대화에서 파악된 사용자 특성 요약: ${characteristics}
+${analysisContext}
 
 [이전 대화 기록]
 ${history}
@@ -351,16 +386,27 @@ ${history}
     let newUsersData = { ...usersData };
 
     if (!newUsersData[username]) {
+      // 첫 사용자
       newUsersData[username] = {
         username: username,
-        history: [{ role: 'assistant', content: `안녕하세요, ${username}님. BMI(마음 인바디)를 통해 오늘 당신의 마음 균형을 체크해볼까요?` }],
-        characteristics: ""
+        history: [{ role: 'assistant', content: `안녕하세요, ${username}님. 당신의 마음을 듣고 공감해드리는 AI 상담사입니다. 오늘 어떤 일이 있으셨나요?` }],
+        characteristics: "",
+        analysisHistory: [],
+        isReturningUser: false
       };
+      setUsersData(newUsersData);
+      setCurrentUser(username);
+      setMessages(newUsersData[username].history);
+      setView('counseling'); // 첫 사용자는 바로 상담으로
+    } else {
+      // 기존 사용자
+      newUsersData[username].isReturningUser = true;
+      setUsersData(newUsersData);
+      setCurrentUser(username);
+      setMessages(newUsersData[username].history);
+      setView('home'); // 기존 사용자는 홈 화면에서 선택
     }
     
-    setUsersData(newUsersData);
-    setCurrentUser(username);
-    setMessages(newUsersData[username].history);
     saveData({ users: newUsersData, currentUser: username });
   };
 
@@ -371,8 +417,67 @@ ${history}
     
     saveData({ users: usersData, currentUser: null });
     setCurrentUser(null);
+    setView('login');
     setMessages([]);
     setUsernameInput('');
+  };
+
+  const finalizeCounseling = async () => {
+    if (!currentUser || messages.length === 0) return;
+    
+    setIsSummarizing(true);
+    const history = messages.map(msg => 
+      `${msg.role === 'user' ? '사용자' : '상담사'}: ${msg.content}`
+    ).join('\n');
+
+    const analysisPrompt = `다음 심리 상담 대화 내용을 바탕으로 사용자의 심리 상태를 심층 분석해 주세요. 
+반드시 다음 JSON 형식으로만 답변하세요:
+{
+  "summary": "50자 내외의 사용자 심리 상태 요약",
+  "emotions": {
+    "joy": 0~100 사이 정수,
+    "trust": 0~100 사이 정수,
+    "fear": 0~100 사이 정수,
+    "surprise": 0~100 사이 정수,
+    "sadness": 0~100 사이 정수,
+    "disgust": 0~100 사이 정수,
+    "anger": 0~100 사이 정수,
+    "anticipation": 0~100 사이 정수
+  }
+}
+
+[대화 내용]
+${history}`;
+
+    try {
+      const genAI = new GoogleGenerativeAI(import.meta.env.VITE_GEMINI_API_KEY);
+      const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash", generationConfig: { response_mime_type: "application/json" } });
+      const result = await model.generateContent(analysisPrompt);
+      const analysisJson = JSON.parse(result.response.text());
+
+      const newAnalysis: AnalysisData = {
+        summary: analysisJson.summary,
+        emotions: analysisJson.emotions,
+        date: new Date().toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+      };
+
+      const newUsersData = {
+        ...usersData,
+        [currentUser]: {
+          ...usersData[currentUser],
+          analysisHistory: [...(usersData[currentUser].analysisHistory || []), newAnalysis],
+          isReturningUser: true // 상담을 한 번 했으므로 이제 기존 사용자
+        },
+      };
+      setUsersData(newUsersData);
+      saveData({ users: newUsersData, currentUser });
+      setView('analysis');
+    } catch (err) {
+      console.error("분석 실패:", err);
+      alert("상담 결과를 분석하는 도중 오류가 발생했습니다.");
+    } finally {
+      setIsSummarizing(false);
+    }
   };
 
   const summarizeCharacteristics = async (isSilent = false) => {
@@ -390,7 +495,7 @@ ${history}`;
 
     try {
       const genAI = new GoogleGenerativeAI(import.meta.env.VITE_GEMINI_API_KEY);
-      const model = genAI.getGenerativeModel({ model: "gemini-3-flash-preview" });
+      const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
       const result = await model.generateContent(summarizationPrompt);
       const summary = result.response.text();
 
@@ -446,10 +551,78 @@ ${history}`;
     }
   };
 
-  if (!currentUser) {
+  const PlutchikWheel = ({ data }: { data: AnalysisData['emotions'] }) => {
+    const emotions = [
+      { key: 'joy', label: '기쁨', color: '#facc15' },
+      { key: 'trust', label: '신뢰', color: '#84cc16' },
+      { key: 'fear', label: '공포', color: '#166534' },
+      { key: 'surprise', label: '놀람', color: '#3b82f6' },
+      { key: 'sadness', label: '슬픔', color: '#2563eb' },
+      { key: 'disgust', label: '혐오', color: '#9333ea' },
+      { key: 'anger', label: '분노', color: '#ef4444' },
+      { key: 'anticipation', label: '기대', color: '#f97316' },
+    ];
+
+    const size = 300;
+    const center = size / 2;
+    const radius = size * 0.4;
+
+    const points = emotions.map((e, i) => {
+      const angle = (i * 360) / emotions.length - 90;
+      const score = (data as any)[e.key] || 0;
+      const r = (radius * score) / 100;
+      const x = center + r * Math.cos((angle * Math.PI) / 180);
+      const y = center + r * Math.sin((angle * Math.PI) / 180);
+      return `${x},${y}`;
+    }).join(' ');
+
+    return (
+      <div className="plutchik-container">
+        <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+          {/* Background circles */}
+          {[20, 40, 60, 80, 100].map(v => (
+            <circle key={v} cx={center} cy={center} r={(radius * v) / 100} fill="none" stroke="#334155" strokeWidth="1" />
+          ))}
+          {/* Axis lines */}
+          {emotions.map((e, i) => {
+            const angle = (i * 360) / emotions.length - 90;
+            const x2 = center + radius * Math.cos((angle * Math.PI) / 180);
+            const y2 = center + radius * Math.sin((angle * Math.PI) / 180);
+            return <line key={i} x1={center} y1={center} x2={x2} y2={y2} stroke="#334155" strokeWidth="1" />;
+          })}
+          {/* Emotion Polygon */}
+          <polygon points={points} fill="rgba(99, 102, 241, 0.5)" stroke="#6366f1" strokeWidth="2" />
+          {/* Labels */}
+          {emotions.map((e, i) => {
+            const angle = (i * 360) / emotions.length - 90;
+            const x = center + (radius + 20) * Math.cos((angle * Math.PI) / 180);
+            const y = center + (radius + 20) * Math.sin((angle * Math.PI) / 180);
+            return (
+              <text key={i} x={x} y={y} fill={e.color} fontSize="12" fontWeight="bold" textAnchor="middle" dominantBaseline="middle">
+                {e.label}
+              </text>
+            );
+          })}
+        </svg>
+      </div>
+    );
+  };
+
+  const startNewCounseling = () => {
+    if (!currentUser) return;
+    const initialMsg: ChatMessage = { 
+      role: 'assistant', 
+      content: `안녕하세요, ${currentUser}님. 오늘 하루는 어떠셨나요? 어떤 이야기든 들어드릴 준비가 되어 있어요.` 
+    };
+    setMessages([initialMsg]);
+    setView('counseling');
+  };
+
+  if (view === 'login' || !currentUser) {
     return (
       <div className="container login-container">
         <div className="login-header">
+          <img src="/logo.png" alt="BMI Logo" className="login-logo" />
           <h1>BMI: Balance of Mind Index</h1>
           <p>"Weight your Mind, Balance your Life."</p>
         </div>
@@ -467,20 +640,91 @@ ${history}`;
     );
   }
 
+  if (view === 'home') {
+    return (
+      <div className="container home-container">
+        <header>
+          <div className="header-logo-container">
+            <img src="/logo.png" alt="BMI Logo" className="header-logo" />
+            <h1>BMI</h1>
+          </div>
+          <div className="user-info">
+            <span>{currentUser}님, 다시 오신 것을 환영합니다.</span>
+            <button onClick={handleLogout} className="logout-button">로그아웃</button>
+          </div>
+        </header>
+        <div className="home-selection">
+          <div className="selection-card" onClick={startNewCounseling}>
+            <div className="card-icon">💬</div>
+            <h2>AI 상담 시작</h2>
+            <p>오늘의 고민을 나누고 위로를 받으세요.</p>
+          </div>
+          <div className="selection-card" onClick={() => setView('analysis')}>
+            <div className="card-icon">📊</div>
+            <h2>분석 페이지</h2>
+            <p>나의 심리 상태와 감정 변화를 확인하세요.</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (view === 'analysis') {
+    const history = usersData[currentUser]?.analysisHistory || [];
+    const reversedHistory = [...history].reverse(); // 최신순 정렬
+
+    return (
+      <div className="container analysis-container">
+        <header>
+          <div className="header-logo-container">
+            <img src="/logo.png" alt="BMI Logo" className="header-logo" />
+            <h1>BMI</h1>
+          </div>
+          <div className="user-info">
+            <button onClick={() => setView('home')} className="nav-button">홈으로</button>
+            <button onClick={startNewCounseling} className="nav-button">새 상담 시작</button>
+          </div>
+        </header>
+        <main className="analysis-history-list">
+          {reversedHistory.length > 0 ? (
+            reversedHistory.map((item, idx) => (
+              <div key={idx} className="analysis-history-item">
+                <div className="analysis-card summary-card">
+                  <div className="history-badge">{idx === 0 ? "최근 상담" : `과거 기록 (${history.length - idx}회차)`}</div>
+                  <p className="analysis-date">{item.date}</p>
+                  <div className="summary-text">{item.summary}</div>
+                </div>
+                <div className="analysis-card wheel-card">
+                  <h3>감정 분포</h3>
+                  <PlutchikWheel data={item.emotions} />
+                </div>
+              </div>
+            ))
+          ) : (
+            <div className="no-data">상담 데이터가 없습니다. 상담을 먼저 진행해주세요.</div>
+          )}
+        </main>
+      </div>
+    );
+  }
+
   return (
     <div className="container">
       {isSummarizing && (
         <div className="loading-overlay">
           <div className="loading-spinner"></div>
-          <p>대화 내용을 요약하고 저장하는 중...</p>
+          <p>대화 내용을 분석하고 저장하는 중...</p>
         </div>
       )}
       <header>
-        <h1>BMI</h1>
+        <div className="header-logo-container">
+          <img src="/logo.png" alt="BMI Logo" className="header-logo" />
+          <h1>BMI</h1>
+        </div>
         <div className="user-info">
-          <span>{currentUser}님, 환영합니다.</span>
-          <button onClick={() => summarizeCharacteristics()} disabled={isSummarizing} className="summary-button">대화 내용 요약/저장</button>
-          <button onClick={handleLogout} disabled={isSummarizing} className="logout-button">로그아웃</button>
+          <span>{currentUser}님, 상담 중입니다.</span>
+          <button onClick={finalizeCounseling} disabled={isSummarizing} className="summary-button">상담 종료 및 분석</button>
+          <button onClick={() => setView('home')} disabled={isSummarizing} className="logout-button">홈으로</button>
         </div>
       </header>
       <main className="counseling-layout">
